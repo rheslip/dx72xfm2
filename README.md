@@ -25,7 +25,9 @@ fine tuning the settings of the XFM2.
 Format of the resulting .syx files:
 
 5 byte header 0xf0 0x43 0x00 0x00 0x00   - 3rd byte is XFM2 unit number, always 0 in .syx files
+
 512 parameters stored in MSB LSB midi format. range of most XFM2 parameters is 0-255
+
 1 byte trailer 0xf7
 
 
