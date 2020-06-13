@@ -317,7 +317,7 @@ for (count=0;count<32;count++) {
 
 
 // use patch name for xfm2 patch filename
-	for(p=0; p<10;p++) if (name[p]==' ') name[p]='_'; // remove spaces from name
+	for(p=0; p<10;p++) if (!isalnum(name[p])) name[p]='_'; // remove unusable characters from name
 	
 	sprintf(out,"%s.syx",name);
 
