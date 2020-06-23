@@ -4,10 +4,83 @@
 //      DX72Csound by Jeff Harrington  idealord@dorsai.org           
 //       After Models by Russell Pinkston                                 
 //====================================================================
+// June 23 2020 - RH added piecewise linear scaling curves to map some of the DX7 values to XFM2 parameters more accurately
 
 #include "stdio.h"
 #include "stdlib.h"
+#include "math.h"
 #include "XFM2_params.h"
+
+// linear scale factors from DX7 to XFM2
+#define SCALE99 255/99  // scale factor for DX7 0-99 values to XFM2 0-255 values
+#define LEVELSCALE 230/99  // scale factor for DX7 0-99 level values to XFM2 values - levels are a little high if mapped directly
+#define FEEDBACKSCALE 255/7  // scale factor for DX7 0-7 feedback values to XFM2 values 
+#define FINESCALE 150/50  // scale factor for DX7 0-99 fine pitch values to XFM2 values - this ratio seems to sound good for the organ and clav patches
+#define LFOSPEEDSCALE 115/30  // scale factor for DX7 0-99 lfo speed to XFM2 values  - this ratio seems to sound good for the koto patch
+#define LFODEPTHSCALE 7/17  // scale factor for DX7 0-99 lfo depth to XFM2 values  - this ratio seems to sound good for the koto patch
+
+
+// piecewise linear scaling curves - linear scaling doesn't work well for some parameters like env gen rates, op levels
+// curves are x,y pairs ie DX7 value, XFM2 value
+// values between points are interpolated
+// curves should start at 0,0 and end at 99,255 for most xfm2 parameters
+
+#define CURVPTS 5
+
+// flat curve for testing
+float flatcurve[CURVPTS * 2] = {
+	0,0,
+	25,64,
+	50, 127,
+	75, 192,
+	99,255
+};
+
+// ratecurve - scales lower env gen rates down to make the envelopes longer
+float ratecurve[CURVPTS * 2] = {
+	0,0,
+	25,45,
+	50, 110,
+	75, 180,
+	99,255
+};	
+
+// attack curve - rates have to be sped up (higher numbers)
+float attackcurve[CURVPTS * 2] = {
+	0,0,
+	25,80,
+	50, 150,
+	75, 230,
+	99,255
+};
+
+// levelcurve - scales DX7 operator levels down
+float levelcurve[CURVPTS * 2] = {
+	0,0,
+	25,65,
+	75, 180,
+	90, 205,    // compress the top end of the range
+	99,210    // max op level is less than 255 to better match DX7 op levels
+};	
+
+unsigned lscale(unsigned rate, float curve[]) {
+	float x1,y1,x2,y2,y,slope,r;
+	int i;
+	r=(float) rate;
+	x1=curve[0];  
+	y1=curve[1];
+	for (i=2;i< CURVPTS *2; i+=2) {  // step through each line segment of the curve
+		if (curve[i] >= r) {  // find the segment this rate (X point) lies on
+			slope=(curve[i+1]-y1)/(curve[i]-x1);
+			y=y1+(r-x1)*slope;
+			return (unsigned)(round(y));
+		}
+		x1=curve[i];
+		y1=curve[i+1];
+	}
+	return 255;  // if curves are correct we should never get here
+}
+
 
 struct dx7_operator {
 unsigned char OP_EG_R1;   
@@ -56,12 +129,7 @@ unsigned char TRANSPOSE;
 char NAME[10];
 } global;
 
-#define SCALE99 255/99  // scale factor for DX7 0-99 values to XFM2 0-255 values
-#define LEVELSCALE 230/99  // scale factor for DX7 0-99 level values to XFM2 values - levels are a little high if mapped directly
-#define FEEDBACKSCALE 255/7  // scale factor for DX7 0-7 feedback values to XFM2 values 
-#define FINESCALE 150/50  // scale factor for DX7 0-99 fine pitch values to XFM2 values this ratio seems to sound good for the organ and clav patches
-#define LFOSPEEDSCALE 115/30  // scale factor for DX7 0-99 lfo speed to XFM2 values  - this ratio seems to sound good for the koto patch
-#define LFODEPTHSCALE 7/17  // scale factor for DX7 0-99 lfo depth to XFM2 values  - this ratio seems to sound good for the koto patch
+
 
 // maps DX7 algorithms to XFM2 ALGO bits
 struct algmap {
@@ -227,10 +295,10 @@ for (count=0;count<32;count++) {
 	xfm2parms[PRM_L1_P]=(unsigned char)((unsigned)global.PITCH_EG_L1*SCALE99);  // L1 - attack level
 	xfm2parms[PRM_L2_P]=(unsigned char)((unsigned)global.PITCH_EG_L2*SCALE99);  // L2 - end of decay1
 	xfm2parms[PRM_L3_P]=(unsigned char)((unsigned)global.PITCH_EG_L3*SCALE99);  // L3 sustain	
-	xfm2parms[PRM_R1_P]=(unsigned char)((unsigned)global.PITCH_EG_R1*SCALE99);  // R1 - attack rate
-	xfm2parms[PRM_R2_P]=(unsigned char)((unsigned)global.PITCH_EG_R2*SCALE99);  // R2 - decay 1 rate
-	xfm2parms[PRM_R3_P]=(unsigned char)((unsigned)global.PITCH_EG_R3*SCALE99);  // R3 - decay 2 rate
-	xfm2parms[PRM_R4_P]=(unsigned char)((unsigned)global.PITCH_EG_R4*SCALE99);  // R4 - release rate
+	xfm2parms[PRM_R1_P]=(unsigned char)(lscale((unsigned)global.PITCH_EG_R1, attackcurve));  // R1 - attack rate - linear parameter scaling sounds better
+	xfm2parms[PRM_R2_P]=(unsigned char)(lscale((unsigned)global.PITCH_EG_R2, ratecurve));  // R2 - decay 1 rate
+	xfm2parms[PRM_R3_P]=(unsigned char)(lscale((unsigned)global.PITCH_EG_R3, ratecurve));  // R3 - decay 2 rate
+	xfm2parms[PRM_R4_P]=(unsigned char)(lscale((unsigned)global.PITCH_EG_R4, ratecurve));  // R4 - release rate
 
 // lfo parameters
 	xfm2parms[PRM_LFO_SPEED ]=(unsigned char)((unsigned)global.LFO_SPEED*LFOSPEEDSCALE);  // lfo speed
@@ -248,18 +316,22 @@ for (count=0;count<32;count++) {
 // note that ops are read from DX7 sysex in the order 6,5,4,3,2,1 but we convert them 1,2,3,4,5,6
 
 	for (op=0;op<6;op++) {
-		xop=5-op;  // change DX7 sysex order to incrementing order
-		xfm2parms[PRM_LEVEL0 +xop]=(unsigned char)((unsigned)operator[op].OUTPUT_LEV*LEVELSCALE); // op level 
+		xop=5-op;  // change DX7 sysex op order to incrementing order
+		// there seems to be quite a difference between DX7 and XFM2 output levels and modulator levels
+		// if this op goes to the output use a flat scaling 
+		// if the op is just a modulator, scale the output level down using the levelcurve
+		if (xfm2parms[PRM_ALGO0 +xop] & 1) xfm2parms[PRM_LEVEL0 +xop]=(unsigned char)(lscale((unsigned)operator[op].OUTPUT_LEV, flatcurve));
+		else xfm2parms[PRM_LEVEL0 +xop]=(unsigned char)(lscale((unsigned)operator[op].OUTPUT_LEV, levelcurve)); // op level 
 		xfm2parms[PRM_L0_0 +xop]=(unsigned char)((unsigned)operator[op].OP_EG_L4*SCALE99);  // xfm2 L0 L4 L5 = dx7 L4 - start and end level
 		xfm2parms[PRM_L4_0 +xop]=(unsigned char)((unsigned)operator[op].OP_EG_L4*SCALE99); 
 //		xfm2parms[PRM_L5_0 +xop]=(unsigned char)((unsigned)operator[op].OP_EG_L4*SCALE99);  // leave this as zero so envelope ends at zero
 		xfm2parms[PRM_L1_0 +xop]=(unsigned char)((unsigned)operator[op].OP_EG_L1*SCALE99);  // L1 - attack level
 		xfm2parms[PRM_L2_0 +xop]=(unsigned char)((unsigned)operator[op].OP_EG_L2*SCALE99);  // L2 - end of decay1
 		xfm2parms[PRM_L3_0 +xop]=(unsigned char)((unsigned)operator[op].OP_EG_L3*SCALE99);  // L3 sustain	
-		xfm2parms[PRM_R1_0 +xop]=(unsigned char)((unsigned)operator[op].OP_EG_R1*SCALE99);  // R1 - attack rate
-		xfm2parms[PRM_R2_0 +xop]=(unsigned char)((unsigned)operator[op].OP_EG_R2*SCALE99);  // R2 - decay 1 rate
-		xfm2parms[PRM_R3_0 +xop]=(unsigned char)((unsigned)operator[op].OP_EG_R3*SCALE99);  // R3 - decay 2 rate
-		xfm2parms[PRM_R4_0 +xop]=(unsigned char)((unsigned)operator[op].OP_EG_R4*SCALE99);  // R4 - release rate
+		xfm2parms[PRM_R1_0 +xop]=(unsigned char)(lscale((unsigned)operator[op].OP_EG_R1, attackcurve));  // R1 - attack rate
+		xfm2parms[PRM_R2_0 +xop]=(unsigned char)(lscale((unsigned)operator[op].OP_EG_R2, ratecurve));  // R2 - decay 1 rate
+		xfm2parms[PRM_R3_0 +xop]=(unsigned char)(lscale((unsigned)operator[op].OP_EG_R3, ratecurve));  // R3 - decay 2 rate
+		xfm2parms[PRM_R4_0 +xop]=(unsigned char)(lscale((unsigned)operator[op].OP_EG_R4, ratecurve));  // R4 - release rate
 		xfm2parms[PRM_RATIO0 +xop]=(unsigned char)((unsigned)operator[op].FREQ_COARSE);  // coarse frequency	
 		xfm2parms[PRM_RATIO_FINE0 +xop]=(unsigned char)((unsigned)operator[op].FREQ_FINE*FINESCALE);  // fine frequency			
 		xfm2parms[PRM_FINE0 +xop]=(unsigned char)(128+(int)(operator[op].OSC_DETUNE-7));  // detune dx7 value 7= no detune XFM2 value 128= no detune **** this seems to work about right with no scaling
