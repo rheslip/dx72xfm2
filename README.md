@@ -2,7 +2,9 @@ DX7 Patch Converter for the XFM2 FM synth
 
 
 Converts DX7 patch banks (32 patches) to sysex files for use with the XFM2
-patch editor also found in this github repository. 
+patch editor also found in this github repository:
+
+https://github.com/rheslip/XFM2_Editor_Librarian
 
 
 Note that the XFM2 will not load a patch in sysex format directly. 
@@ -44,5 +46,9 @@ point for your own custom patches. The XFM2 is capable of much richer sounds tha
 Compiled with gcc on windows 7.
 
 
+Other useful XFM2 resources: https://github.com/xerhard/XFM2-resources
+
+
 R Heslip June 2020
+rheslip@hotmail.com
 
